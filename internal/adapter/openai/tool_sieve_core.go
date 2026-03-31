@@ -183,7 +183,7 @@ func findToolSegmentStart(s string) int {
 		return -1
 	}
 	lower := strings.ToLower(s)
-	keywords := []string{"tool_calls", "\"function\"", "function.name:"}
+	keywords := []string{"tool_calls", "\"function\"", "function.name:", "functionCall", "\"tool_use\""}
 	bestKeyIdx := -1
 	for _, kw := range keywords {
 		idx := strings.Index(lower, kw)
@@ -240,7 +240,7 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 
 	lower := strings.ToLower(captured)
 	keyIdx := -1
-	keywords := []string{"tool_calls", "\"function\"", "function.name:"}
+	keywords := []string{"tool_calls", "\"function\"", "function.name:", "functionCall", "\"tool_use\""}
 	for _, kw := range keywords {
 		idx := strings.Index(lower, kw)
 		if idx >= 0 && (keyIdx < 0 || idx < keyIdx) {
