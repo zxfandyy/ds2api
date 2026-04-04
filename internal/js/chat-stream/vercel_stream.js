@@ -15,6 +15,7 @@ const {
   resolveToolcallPolicy,
   formatIncrementalToolCallDeltas,
   filterIncrementalToolCallDeltasByAllowed,
+  boolDefaultTrue,
 } = require('./toolcall_policy');
 const { createChatCompletionEmitter } = require('./stream_emitter');
 const {
@@ -47,6 +48,7 @@ async function handleVercelStream(req, res, rawBody, payload) {
   const toolPolicy = resolveToolcallPolicy(prep.body, payload.tools);
   const toolNames = toolPolicy.toolNames;
   const emitEarlyToolDeltas = toolPolicy.emitEarlyToolDeltas;
+  const stripReferenceMarkers = boolDefaultTrue(prep.body.compat && prep.body.compat.strip_reference_markers);
 
   if (!model || !leaseID || !deepseekToken || !powHeader || !completionPayload) {
     writeOpenAIError(res, 500, 'invalid vercel prepare response');
@@ -219,7 +221,7 @@ async function handleVercelStream(req, res, rawBody, payload) {
             await finish('content_filter');
             return;
           }
-          const parsed = parseChunkForContent(chunk, thinkingEnabled, currentType);
+          const parsed = parseChunkForContent(chunk, thinkingEnabled, currentType, stripReferenceMarkers);
           currentType = parsed.newType;
           if (parsed.finished) {
             await finish('stop');

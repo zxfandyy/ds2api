@@ -1,8 +1,10 @@
-# DeepSeek SSE 流格式字段分析（2026-04-03）
+# DeepSeek SSE 流格式字段分析（永久默认样本）
 
-> 日期：2026-04-03（UTC）
+> 日期：2026-04-05（UTC）
 > 
-> 样本：`tests/raw_stream_samples/guangzhou-weather-reasoner-search-20260403/upstream.stream.sse`
+> 默认样本：
+> - `tests/raw_stream_samples/guangzhou-weather-reasoner-search-20260404/upstream.stream.sse`
+> - `tests/raw_stream_samples/content-filter-trigger-20260405-jwt3/upstream.stream.sse`
 > 
 > 模型：`deepseek-reasoner-search`（搜索 + 思考）
 
@@ -69,13 +71,28 @@ data: <json or text>
 
 1. 跳过所有 `response/fragments/-?\d+/status`。
 2. 继续保留 `response/status=FINISHED` 作为真正结束判定。
-3. 通过独立仿真工具持续回放全部样本，作为回归门禁：
+3. 通过独立仿真工具持续回放 manifest 声明的 canonical 默认样本，作为回归门禁：
 
 ```bash
 ./tests/scripts/run-raw-stream-sim.sh
 ```
 
-## 6. 后续扩展建议
+## 6. `CONTENT_FILTER` 终态样本
+
+在 `content-filter-trigger-20260405-jwt3` 样本中，末尾会出现一组明确的风控终态字段：
+
+- `response.status = CONTENT_FILTER`
+- `response.quasi_status = CONTENT_FILTER`
+- `response.fragments` 里包含 `TEMPLATE_RESPONSE` 拒答文案
+- 后续仍会有 `event: finish`
+
+这说明：
+
+1. 风控不是“没有结束信号”，而是“正常流式输出后在尾部切换到风控终态”。
+2. 适配层不能把 `TEMPLATE_RESPONSE` 当普通正文输出。
+3. 回放工具需要把这种终态保留下来，用于后续回归和字段分析。
+
+## 7. 后续扩展建议
 
 - 增加不同模型（`deepseek-chat-search` / 非 search / 非 thinking）样本。
 - 增加异常样本（限流、中断、content_filter、空结果）。

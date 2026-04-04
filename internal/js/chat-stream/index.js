@@ -7,6 +7,7 @@ const {
   parseChunkForContent,
   extractContentRecursive,
   shouldSkipPath,
+  stripReferenceMarkers,
 } = require('./sse_parse');
 const {
   resolveToolcallPolicy,
@@ -100,6 +101,7 @@ module.exports.__test = {
   parseChunkForContent,
   extractContentRecursive,
   shouldSkipPath,
+  stripReferenceMarkers,
   asString,
   resolveToolcallPolicy,
   formatIncrementalToolCallDeltas,

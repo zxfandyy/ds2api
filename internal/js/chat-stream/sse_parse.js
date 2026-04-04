@@ -5,7 +5,7 @@ const {
   SKIP_EXACT_PATHS,
 } = require('../shared/deepseek-constants');
 
-function parseChunkForContent(chunk, thinkingEnabled, currentType) {
+function parseChunkForContent(chunk, thinkingEnabled, currentType, stripReferenceMarkers = true) {
   if (!chunk || typeof chunk !== 'object' || !Object.prototype.hasOwnProperty.call(chunk, 'v')) {
     return { parts: [], finished: false, newType: currentType };
   }
@@ -26,7 +26,7 @@ function parseChunkForContent(chunk, thinkingEnabled, currentType) {
         continue;
       }
       const fragType = asString(frag.type).toUpperCase();
-      const content = asString(frag.content);
+      const content = asContentString(frag.content, stripReferenceMarkers);
       if (!content) {
         continue;
       }
@@ -76,14 +76,15 @@ function parseChunkForContent(chunk, thinkingEnabled, currentType) {
     if (val === 'FINISHED' && (!pathValue || pathValue === 'status')) {
       return { parts: [], finished: true, newType };
     }
-    if (val) {
-      parts.push({ text: val, type: partType });
+    const content = asContentString(val, stripReferenceMarkers);
+    if (content) {
+      parts.push({ text: content, type: partType });
     }
     return { parts, finished: false, newType };
   }
 
   if (Array.isArray(val)) {
-    const extracted = extractContentRecursive(val, partType);
+    const extracted = extractContentRecursive(val, partType, stripReferenceMarkers);
     if (extracted.finished) {
       return { parts: [], finished: true, newType };
     }
@@ -98,7 +99,7 @@ function parseChunkForContent(chunk, thinkingEnabled, currentType) {
         if (!frag || typeof frag !== 'object') {
           continue;
         }
-        const content = asString(frag.content);
+        const content = asContentString(frag.content, stripReferenceMarkers);
         if (!content) {
           continue;
         }
@@ -118,7 +119,7 @@ function parseChunkForContent(chunk, thinkingEnabled, currentType) {
   return { parts, finished: false, newType };
 }
 
-function extractContentRecursive(items, defaultType) {
+function extractContentRecursive(items, defaultType, stripReferenceMarkers = true) {
   const parts = [];
   for (const it of items) {
     if (!it || typeof it !== 'object') {
@@ -135,7 +136,7 @@ function extractContentRecursive(items, defaultType) {
     if (shouldSkipPath(itemPath)) {
       continue;
     }
-    const content = asString(it.content);
+    const content = asContentString(it.content, stripReferenceMarkers);
     if (content) {
       const typeName = asString(it.type).toUpperCase();
       if (typeName === 'THINK' || typeName === 'THINKING') {
@@ -157,7 +158,10 @@ function extractContentRecursive(items, defaultType) {
 
     if (typeof itemV === 'string') {
       if (itemV && itemV !== 'FINISHED') {
-        parts.push({ text: itemV, type: partType });
+        const content = asContentString(itemV, stripReferenceMarkers);
+        if (content) {
+          parts.push({ text: content, type: partType });
+        }
       }
       continue;
     }
@@ -168,14 +172,17 @@ function extractContentRecursive(items, defaultType) {
     for (const inner of itemV) {
       if (typeof inner === 'string') {
         if (inner) {
-          parts.push({ text: inner, type: partType });
+          const content = asContentString(inner, stripReferenceMarkers);
+          if (content) {
+            parts.push({ text: content, type: partType });
+          }
         }
         continue;
       }
       if (!inner || typeof inner !== 'object') {
         continue;
       }
-      const ct = asString(inner.content);
+      const ct = asContentString(inner.content, stripReferenceMarkers);
       if (!ct) {
         continue;
       }
@@ -218,6 +225,40 @@ function isCitation(text) {
   return asString(text).trim().startsWith('[citation:');
 }
 
+function asContentString(v, stripReferenceMarkers = true) {
+  if (typeof v === 'string') {
+    return stripReferenceMarkers ? stripReferenceMarkersText(v) : v;
+  }
+  if (Array.isArray(v)) {
+    let out = '';
+    for (const item of v) {
+      out += asContentString(item, stripReferenceMarkers);
+    }
+    return out;
+  }
+  if (v && typeof v === 'object') {
+    if (Object.prototype.hasOwnProperty.call(v, 'content')) {
+      return asContentString(v.content, stripReferenceMarkers);
+    }
+    if (Object.prototype.hasOwnProperty.call(v, 'v')) {
+      return asContentString(v.v, stripReferenceMarkers);
+    }
+    return '';
+  }
+  if (v == null) {
+    return '';
+  }
+  const text = String(v);
+  return stripReferenceMarkers ? stripReferenceMarkersText(text) : text;
+}
+
+function stripReferenceMarkersText(text) {
+  if (!text) {
+    return text;
+  }
+  return text.replace(/\[reference:\s*\d+\]/gi, '');
+}
+
 function asString(v) {
   if (typeof v === 'string') {
     return v.trim();
@@ -237,4 +278,5 @@ module.exports = {
   shouldSkipPath,
   isFragmentStatusPath,
   isCitation,
+  stripReferenceMarkers: stripReferenceMarkersText,
 };

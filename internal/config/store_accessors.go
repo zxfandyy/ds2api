@@ -42,6 +42,15 @@ func (s *Store) CompatWideInputStrictOutput() bool {
 	return *s.cfg.Compat.WideInputStrictOutput
 }
 
+func (s *Store) CompatStripReferenceMarkers() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cfg.Compat.StripReferenceMarkers == nil {
+		return true
+	}
+	return *s.cfg.Compat.StripReferenceMarkers
+}
+
 func (s *Store) ToolcallMode() string {
 	return "feature_match"
 }

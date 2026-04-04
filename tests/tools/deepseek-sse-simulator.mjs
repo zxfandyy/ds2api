@@ -13,6 +13,7 @@ function parseArgs(argv) {
     samplesRoot: 'tests/raw_stream_samples',
     reportPath: '',
     failOnLeak: true,
+    failOnReferenceLeak: true,
     failOnMissingFinish: true,
   };
   for (let i = 2; i < argv.length; i += 1) {
@@ -23,6 +24,8 @@ function parseArgs(argv) {
       out.reportPath = argv[++i];
     } else if (a === '--no-fail-on-leak') {
       out.failOnLeak = false;
+    } else if (a === '--no-fail-on-reference-leak') {
+      out.failOnReferenceLeak = false;
     } else if (a === '--no-fail-on-missing-finish') {
       out.failOnMissingFinish = false;
     }
@@ -30,15 +33,55 @@ function parseArgs(argv) {
   return out;
 }
 
-function findSampleDirs(root) {
-  if (!fs.existsSync(root)) {
-    return [];
+function loadManifest(root) {
+  const manifestPath = path.join(root, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return null;
   }
-  return fs.readdirSync(root)
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const defaultSamples = Array.isArray(manifest.default_samples)
+      ? manifest.default_samples.map((v) => String(v).trim()).filter(Boolean)
+      : [];
+    if (defaultSamples.length === 0) {
+      return null;
+    }
+    return { manifestPath, defaultSamples };
+  } catch (err) {
+    throw new Error(`[sim] failed to parse ${manifestPath}: ${err.message}`);
+  }
+}
+
+function resolveSampleDirs(root) {
+  if (!fs.existsSync(root)) {
+    return { dirs: [], manifestPath: '' };
+  }
+
+  const manifest = loadManifest(root);
+  if (manifest) {
+    const dirs = [];
+    const missing = [];
+    for (const sampleID of manifest.defaultSamples) {
+      const dir = path.join(root, sampleID);
+      const ssePath = path.join(dir, 'upstream.stream.sse');
+      if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory() || !fs.existsSync(ssePath)) {
+        missing.push(sampleID);
+        continue;
+      }
+      dirs.push(dir);
+    }
+    if (missing.length > 0) {
+      throw new Error(`[sim] manifest sample(s) missing: ${missing.join(', ')}`);
+    }
+    return { dirs, manifestPath: manifest.manifestPath };
+  }
+
+  const dirs = fs.readdirSync(root)
     .map((name) => path.join(root, name))
     .filter((p) => fs.statSync(p).isDirectory())
     .filter((p) => fs.existsSync(path.join(p, 'upstream.stream.sse')))
     .sort();
+  return { dirs, manifestPath: '' };
 }
 
 function parseSSE(raw) {
@@ -101,13 +144,15 @@ function replaySample(raw) {
     parsedChunks,
     sawFinish,
     leakedFinishedText: outputText.includes('FINISHED'),
+    leakedReferenceMarkers: /\[reference:/i.test(outputText),
+    referenceLeakCount: (outputText.match(/\[reference:/gi) || []).length,
     outputChars: outputText.length,
   };
 }
 
 function main() {
   const opts = parseArgs(process.argv);
-  const dirs = findSampleDirs(opts.samplesRoot);
+  const { dirs, manifestPath } = resolveSampleDirs(opts.samplesRoot);
   if (dirs.length === 0) {
     console.error(`[sim] no samples found: ${opts.samplesRoot}`);
     process.exit(1);
@@ -116,10 +161,15 @@ function main() {
   const report = {
     generated_at: new Date().toISOString(),
     samples_root: opts.samplesRoot,
+    manifest_path: manifestPath,
     total: dirs.length,
     failed: 0,
     samples: [],
   };
+
+  if (manifestPath) {
+    console.log(`[sim] using manifest ${manifestPath} samples=${dirs.length}`);
+  }
 
   for (const dir of dirs) {
     const sampleID = path.basename(dir);
@@ -131,6 +181,9 @@ function main() {
     }
     if (opts.failOnLeak && r.leakedFinishedText) {
       errors.push('FINISHED leaked into output text');
+    }
+    if (opts.failOnReferenceLeak && r.leakedReferenceMarkers) {
+      errors.push('reference markers leaked into output text');
     }
     if (errors.length > 0) {
       report.failed += 1;
@@ -144,8 +197,9 @@ function main() {
 
   for (const s of report.samples) {
     const status = s.ok ? 'OK' : 'FAIL';
+    const leakNote = s.leakedReferenceMarkers ? ` refLeaks=${s.referenceLeakCount}` : '';
     const note = s.errors.length > 0 ? ` errors=${s.errors.join(';')}` : '';
-    console.log(`[sim] ${status} ${s.sample_id} events=${s.events} parsed=${s.parsedChunks} chars=${s.outputChars}${note}`);
+    console.log(`[sim] ${status} ${s.sample_id} events=${s.events} parsed=${s.parsedChunks} chars=${s.outputChars}${leakNote}${note}`);
   }
 
   if (report.failed > 0) {

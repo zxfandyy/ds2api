@@ -104,9 +104,10 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 	_ = ctx
 	result := sse.CollectStream(resp, thinkingEnabled, true)
 
-	finalThinking := result.Thinking
-	finalText := sanitizeLeakedOutput(result.Text)
-	if writeUpstreamEmptyOutputError(w, result) {
+	stripReferenceMarkers := h.compatStripReferenceMarkers()
+	finalThinking := cleanVisibleOutput(result.Thinking, stripReferenceMarkers)
+	finalText := cleanVisibleOutput(result.Text, stripReferenceMarkers)
+	if writeUpstreamEmptyOutputError(w, finalThinking, finalText, result.ContentFilter) {
 		return
 	}
 	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, toolNames)
@@ -141,6 +142,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 	created := time.Now().Unix()
 	bufferToolContent := len(toolNames) > 0
 	emitEarlyToolDeltas := h.toolcallFeatureMatchEnabled() && h.toolcallEarlyEmitHighConfidence()
+	stripReferenceMarkers := h.compatStripReferenceMarkers()
 	initialType := "text"
 	if thinkingEnabled {
 		initialType = "thinking"
@@ -156,6 +158,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 		finalPrompt,
 		thinkingEnabled,
 		searchEnabled,
+		stripReferenceMarkers,
 		toolNames,
 		bufferToolContent,
 		emitEarlyToolDeltas,

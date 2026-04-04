@@ -25,6 +25,7 @@ type DeepSeekCaller interface {
 type ConfigReader interface {
 	ModelAliases() map[string]string
 	CompatWideInputStrictOutput() bool
+	CompatStripReferenceMarkers() bool
 	ToolcallMode() string
 	ToolcallEarlyEmitConfidence() string
 	ResponsesStoreTTLSeconds() int

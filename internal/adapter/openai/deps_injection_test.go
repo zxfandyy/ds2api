@@ -15,6 +15,7 @@ func (m mockOpenAIConfig) ModelAliases() map[string]string { return m.aliases }
 func (m mockOpenAIConfig) CompatWideInputStrictOutput() bool {
 	return m.wideInput
 }
+func (m mockOpenAIConfig) CompatStripReferenceMarkers() bool   { return true }
 func (m mockOpenAIConfig) ToolcallMode() string                { return m.toolMode }
 func (m mockOpenAIConfig) ToolcallEarlyEmitConfidence() string { return m.earlyEmit }
 func (m mockOpenAIConfig) ResponsesStoreTTLSeconds() int       { return m.responsesTTL }

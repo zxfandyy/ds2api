@@ -222,6 +222,29 @@ test('parseChunkForContent supports wrapped response.fragments object shape', ()
   assert.equal(parsed.parts.map((p) => p.text).join(''), 'AB');
 });
 
+test('parseChunkForContent preserves space-only content tokens', () => {
+  const chunk = {
+    p: 'response/content',
+    v: ' ',
+  };
+  const parsed = parseChunkForContent(chunk, false, 'text');
+  assert.equal(parsed.finished, false);
+  assert.deepEqual(parsed.parts, [{ text: ' ', type: 'text' }]);
+});
+
+test('parseChunkForContent strips reference markers from fragment content', () => {
+  const chunk = {
+    p: 'response/fragments',
+    o: 'APPEND',
+    v: [
+      { type: 'RESPONSE', content: '广州天气 [reference:12] 多云' },
+    ],
+  };
+  const parsed = parseChunkForContent(chunk, false, 'text');
+  assert.equal(parsed.finished, false);
+  assert.deepEqual(parsed.parts, [{ text: '广州天气  多云', type: 'text' }]);
+});
+
 test('shouldSkipPath skips dynamic response/fragments/*/status paths only', () => {
   assert.equal(shouldSkipPath('response/fragments/-16/status'), true);
   assert.equal(shouldSkipPath('response/fragments/8/status'), true);
