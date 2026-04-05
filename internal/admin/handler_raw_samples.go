@@ -59,9 +59,9 @@ func (h *Handler) captureRawSample(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	captureEntry, ok := selectNewestCaptureEntry(before, after)
-	if !ok {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": "no upstream capture was recorded"})
+	captureEntries, err := collectNewCaptureEntries(before, after)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
 		return
 	}
 
@@ -70,8 +70,8 @@ func (h *Handler) captureRawSample(w http.ResponseWriter, r *http.Request) {
 		SampleID:     sampleID,
 		Source:       "admin/dev/raw-samples/capture",
 		Request:      payload,
-		Capture:      captureSummaryFromEntry(captureEntry),
-		UpstreamBody: []byte(captureEntry.ResponseBody),
+		Capture:      captureSummaryFromEntries(captureEntries),
+		UpstreamBody: combineCaptureBodies(captureEntries),
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
@@ -134,12 +134,13 @@ func prepareRawSampleCaptureRequest(store ConfigStore, req map[string]any) (map[
 	return payload, sampleID, apiKey, nil
 }
 
-func selectNewestCaptureEntry(before, after []devcapture.Entry) (devcapture.Entry, bool) {
+func collectNewCaptureEntries(before, after []devcapture.Entry) ([]devcapture.Entry, error) {
 	beforeIDs := make(map[string]struct{}, len(before))
 	for _, entry := range before {
 		beforeIDs[entry.ID] = struct{}{}
 	}
-	candidates := make([]devcapture.Entry, 0, len(after))
+
+	entries := make([]devcapture.Entry, 0, len(after))
 	for _, entry := range after {
 		if _, ok := beforeIDs[entry.ID]; ok {
 			continue
@@ -147,33 +148,68 @@ func selectNewestCaptureEntry(before, after []devcapture.Entry) (devcapture.Entr
 		if strings.TrimSpace(entry.ResponseBody) == "" {
 			continue
 		}
-		candidates = append(candidates, entry)
+		entries = append(entries, entry)
 	}
-	if len(candidates) == 0 {
-		candidates = append(candidates, after...)
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no upstream capture was recorded")
 	}
-	if len(candidates) == 0 {
-		return devcapture.Entry{}, false
+
+	// Snapshot order is newest-first; reverse to preserve the actual request order.
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
 	}
-	best := candidates[0]
-	bestScore := len(best.ResponseBody)
-	for _, entry := range candidates[1:] {
-		score := len(entry.ResponseBody)
-		if entry.CreatedAt > best.CreatedAt || (entry.CreatedAt == best.CreatedAt && score > bestScore) {
-			best = entry
-			bestScore = score
-		}
-	}
-	return best, true
+	return entries, nil
 }
 
-func captureSummaryFromEntry(entry devcapture.Entry) rawsample.CaptureSummary {
-	return rawsample.CaptureSummary{
-		Label:         strings.TrimSpace(entry.Label),
-		URL:           strings.TrimSpace(entry.URL),
-		StatusCode:    entry.StatusCode,
-		ResponseBytes: len(entry.ResponseBody),
+func captureSummaryFromEntries(entries []devcapture.Entry) rawsample.CaptureSummary {
+	if len(entries) == 0 {
+		return rawsample.CaptureSummary{}
 	}
+
+	// Primary metadata comes from the first (initial) capture.
+	summary := rawsample.CaptureSummary{
+		Label:      strings.TrimSpace(entries[0].Label),
+		URL:        strings.TrimSpace(entries[0].URL),
+		StatusCode: entries[0].StatusCode,
+	}
+
+	// Record every round (initial + continuations) so replay/debug
+	// can reconstruct the full multi-round interaction.
+	totalBytes := 0
+	rounds := make([]rawsample.CaptureRound, 0, len(entries))
+	for _, entry := range entries {
+		n := len(entry.ResponseBody)
+		totalBytes += n
+		rounds = append(rounds, rawsample.CaptureRound{
+			Label:         strings.TrimSpace(entry.Label),
+			URL:           strings.TrimSpace(entry.URL),
+			StatusCode:    entry.StatusCode,
+			ResponseBytes: n,
+		})
+	}
+	summary.ResponseBytes = totalBytes
+	if len(rounds) > 1 {
+		summary.Rounds = rounds
+	}
+	return summary
+}
+
+func combineCaptureBodies(entries []devcapture.Entry) []byte {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	var buf bytes.Buffer
+	for _, entry := range entries {
+		if buf.Len() > 0 {
+			last := buf.Bytes()[buf.Len()-1]
+			if last != '\n' {
+				buf.WriteByte('\n')
+			}
+		}
+		buf.WriteString(entry.ResponseBody)
+	}
+	return buf.Bytes()
 }
 
 func copyHeader(dst, src http.Header) {

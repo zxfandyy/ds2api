@@ -15,15 +15,23 @@ import (
 
 var referenceMarkerRe = regexp.MustCompile(`(?i)\[reference:\s*\d+\]`)
 
+type CaptureRound struct {
+	Label         string `json:"label,omitempty"`
+	URL           string `json:"url,omitempty"`
+	StatusCode    int    `json:"status_code"`
+	ResponseBytes int    `json:"response_bytes"`
+}
+
 type CaptureSummary struct {
-	Label                    string `json:"label,omitempty"`
-	URL                      string `json:"url,omitempty"`
-	StatusCode               int    `json:"status_code"`
-	ResponseBytes            int    `json:"response_bytes"`
-	ContainsReferenceMarkers bool   `json:"contains_reference_markers,omitempty"`
-	ReferenceMarkerCount     int    `json:"reference_marker_count,omitempty"`
-	ContainsFinishedToken    bool   `json:"contains_finished_token,omitempty"`
-	FinishedTokenCount       int    `json:"finished_token_count,omitempty"`
+	Label                    string         `json:"label,omitempty"`
+	URL                      string         `json:"url,omitempty"`
+	StatusCode               int            `json:"status_code"`
+	ResponseBytes            int            `json:"response_bytes"`
+	Rounds                   []CaptureRound `json:"rounds,omitempty"`
+	ContainsReferenceMarkers bool           `json:"contains_reference_markers,omitempty"`
+	ReferenceMarkerCount     int            `json:"reference_marker_count,omitempty"`
+	ContainsFinishedToken    bool           `json:"contains_finished_token,omitempty"`
+	FinishedTokenCount       int            `json:"finished_token_count,omitempty"`
 }
 
 type Meta struct {
