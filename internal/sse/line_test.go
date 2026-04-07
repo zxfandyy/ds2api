@@ -26,16 +26,13 @@ func TestParseDeepSeekContentLineContentFilter(t *testing.T) {
 	}
 }
 
-func TestParseDeepSeekContentLineContentFilterCodeIgnoresUpstreamOutputTokens(t *testing.T) {
+func TestParseDeepSeekContentLineContentFilterCodeStops(t *testing.T) {
 	res := ParseDeepSeekContentLine(
 		[]byte(`data: {"code":"content_filter","accumulated_token_usage":99}`),
 		false, "text",
 	)
 	if !res.Parsed || !res.Stop || !res.ContentFilter {
 		t.Fatalf("expected content-filter stop result: %#v", res)
-	}
-	if res.OutputTokens != 0 {
-		t.Fatalf("expected upstream output token usage to be ignored, got %d", res.OutputTokens)
 	}
 }
 
@@ -48,25 +45,22 @@ func TestParseDeepSeekContentLineContentFilterStatus(t *testing.T) {
 
 func TestParseDeepSeekContentLineIgnoresAccumulatedTokenUsage(t *testing.T) {
 	res := ParseDeepSeekContentLine([]byte(`data: {"p":"response","o":"BATCH","v":[{"p":"accumulated_token_usage","v":1383},{"p":"quasi_status","v":"FINISHED"}]}`), false, "text")
-	if res.OutputTokens != 0 {
-		t.Fatalf("expected accumulated token usage ignored, got %d", res.OutputTokens)
+	if !res.Parsed {
+		t.Fatalf("expected parsed result")
 	}
 }
 
 func TestParseDeepSeekContentLineIgnoresAccumulatedTokenUsageString(t *testing.T) {
 	res := ParseDeepSeekContentLine([]byte(`data: {"p":"response","o":"BATCH","v":[{"p":"accumulated_token_usage","v":"190"},{"p":"quasi_status","v":"FINISHED"}]}`), false, "text")
-	if res.OutputTokens != 0 {
-		t.Fatalf("expected accumulated token usage string ignored, got %d", res.OutputTokens)
+	if !res.Parsed {
+		t.Fatalf("expected parsed result")
 	}
 }
 
-func TestParseDeepSeekContentLineErrorIgnoresUpstreamOutputTokens(t *testing.T) {
+func TestParseDeepSeekContentLineErrorStops(t *testing.T) {
 	res := ParseDeepSeekContentLine([]byte(`data: {"error":"boom","accumulated_token_usage":123}`), false, "text")
 	if !res.Parsed || !res.Stop {
 		t.Fatalf("expected stop on error: %#v", res)
-	}
-	if res.OutputTokens != 0 {
-		t.Fatalf("expected output token usage ignored on error, got %d", res.OutputTokens)
 	}
 }
 

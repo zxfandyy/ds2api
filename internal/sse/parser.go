@@ -361,10 +361,3 @@ func hasContentFilterStatusValue(v any) bool {
 	}
 	return false
 }
-
-func extractAccumulatedTokenUsage(chunk map[string]any) (int, int) {
-	// 临时策略：忽略上游 usage 字段（accumulated_token_usage / token_usage），
-	// 由下游统一使用内部估算 token 计数，避免上下文累计口径导致单次输出偏差过大。
-	_ = chunk
-	return 0, 0
-}
