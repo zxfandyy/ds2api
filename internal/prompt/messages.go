@@ -65,7 +65,7 @@ func MessagesPrepareWithThinking(messages []map[string]any, thinkingEnabled bool
 				parts = append(parts, formatRoleBlock(systemMarker, text, endInstructionsMarker))
 			}
 		case "user":
-			parts = append(parts, formatRoleBlock(userMarker, m.Text, endSentenceMarker))
+			parts = append(parts, formatRoleBlock(userMarker, m.Text, ""))
 		default:
 			if strings.TrimSpace(m.Text) != "" {
 				parts = append(parts, m.Text)
@@ -79,13 +79,15 @@ func MessagesPrepareWithThinking(messages []map[string]any, thinkingEnabled bool
 		}
 		parts = append(parts, assistantMarker+thinkPrefix)
 	}
-	out := strings.Join(parts, "\n\n")
+	out := strings.Join(parts, "")
 	return markdownImagePattern.ReplaceAllString(out, `[${1}](${2})`)
 }
 
-// DeepSeek-style turn suffixes stay attached to the same block as the role content.
+// formatRoleBlock produces a single concatenated block: marker + text + endMarker.
+// No whitespace is inserted between marker and text to match the official
+// DeepSeek V3.2 chat template encoding.
 func formatRoleBlock(marker, text, endMarker string) string {
-	out := marker + "\n" + text
+	out := marker + text
 	if strings.TrimSpace(endMarker) != "" {
 		out += endMarker
 	}
