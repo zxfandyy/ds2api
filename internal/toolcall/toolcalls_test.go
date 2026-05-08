@@ -949,6 +949,38 @@ func TestSkipXMLIgnoredSectionBoundaryConditions(t *testing.T) {
 	}
 }
 
+func TestSkipXMLIgnoredSectionCommentWithUnicodeKeepsByteOffset(t *testing.T) {
+	text := "<!-- İ -->x<tool_calls>"
+
+	next, adv, blk := skipXMLIgnoredSection(text, 0)
+	if blk || !adv {
+		t.Fatalf("skipXMLIgnoredSection() = (%d, %v, %v), want advanced unblocked comment", next, adv, blk)
+	}
+	if want := len("<!-- İ -->"); next != want {
+		t.Fatalf("skipXMLIgnoredSection() next = %d, want %d", next, want)
+	}
+}
+
+func TestSkipXMLIgnoredSectionMatchesCDATAWithoutAllocatingTail(t *testing.T) {
+	text := "<![cDaTa[<tool_calls>]]><tool_calls>"
+
+	next, adv, blk := skipXMLIgnoredSection(text, 0)
+	if blk || !adv {
+		t.Fatalf("skipXMLIgnoredSection() = (%d, %v, %v), want advanced unblocked CDATA", next, adv, blk)
+	}
+	if want := len("<![cDaTa[<tool_calls>]]>"); next != want {
+		t.Fatalf("skipXMLIgnoredSection() next = %d, want %d", next, want)
+	}
+
+	tag, ok := FindToolMarkupTagOutsideIgnored(text, 0)
+	if !ok {
+		t.Fatal("expected tool tag after skipped CDATA")
+	}
+	if tag.Start != next {
+		t.Fatalf("FindToolMarkupTagOutsideIgnored() start = %d, want %d", tag.Start, next)
+	}
+}
+
 func TestFindToolCDATAEndBoundaryConditions(t *testing.T) {
 	text := "<![CDATA[hello]]>"
 

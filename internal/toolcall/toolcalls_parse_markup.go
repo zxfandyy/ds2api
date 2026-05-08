@@ -210,16 +210,15 @@ func skipXMLIgnoredSection(text string, i int) (next int, advanced bool, blocked
 	if i < 0 || i >= len(text) {
 		return i, false, false
 	}
-	tail := strings.ToLower(text[i:])
 	switch {
-	case strings.HasPrefix(tail, "<![cdata["):
+	case hasASCIIPrefixFoldAt(text, i, "<![cdata["):
 		end := findToolCDATAEnd(text, i+len("<![cdata["))
 		if end < 0 {
 			return 0, false, true
 		}
 		return end + len("]]>"), true, false
-	case strings.HasPrefix(tail, "<!--"):
-		end := strings.Index(tail[len("<!--"):], "-->")
+	case strings.HasPrefix(text[i:], "<!--"):
+		end := strings.Index(text[i+len("<!--"):], "-->")
 		if end < 0 {
 			return 0, false, true
 		}
@@ -227,6 +226,25 @@ func skipXMLIgnoredSection(text string, i int) (next int, advanced bool, blocked
 	default:
 		return i, false, false
 	}
+}
+
+func hasASCIIPrefixFoldAt(text string, start int, prefix string) bool {
+	if start < 0 || len(text)-start < len(prefix) {
+		return false
+	}
+	for j := 0; j < len(prefix); j++ {
+		if asciiLower(text[start+j]) != asciiLower(prefix[j]) {
+			return false
+		}
+	}
+	return true
+}
+
+func asciiLower(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
 }
 
 func findToolCDATAEnd(text string, from int) int {
