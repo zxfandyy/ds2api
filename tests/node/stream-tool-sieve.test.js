@@ -632,6 +632,27 @@ test('sieve ignores inline markdown tool example split across chunks', () => {
   assert.equal(text.includes('完毕'), true);
 });
 
+test('sieve emits real tool after unclosed inline markdown in same chunk', () => {
+  const events = runSieve([
+    'note with stray ` before real call <tool_calls><invoke name="read_file"><parameter name="path">real.md</parameter></invoke></tool_calls>',
+  ], ['read_file']);
+  const text = collectText(events);
+  const finalCalls = events.filter((evt) => evt.type === 'tool_calls').flatMap((evt) => evt.calls || []);
+  assert.equal(finalCalls.length, 1);
+  assert.equal(finalCalls[0].input.path, 'real.md');
+  assert.equal(text.includes('stray ` before real call'), true);
+});
+
+test('sieve emits real tool after unclosed inline markdown across chunks', () => {
+  const events = runSieve([
+    'note with stray ` before real call ',
+    '<tool_calls><invoke name="read_file"><parameter name="path">real.md</parameter></invoke></tool_calls>',
+  ], ['read_file']);
+  const finalCalls = events.filter((evt) => evt.type === 'tool_calls').flatMap((evt) => evt.calls || []);
+  assert.equal(finalCalls.length, 1);
+  assert.equal(finalCalls[0].input.path, 'real.md');
+});
+
 test('sieve emits real tool after split inline markdown tool example closes', () => {
   const events = runSieve([
     '示例：`',

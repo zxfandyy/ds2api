@@ -3,7 +3,6 @@ const {
   resetIncrementalToolState,
   noteText,
   insideCodeFenceWithState,
-  insideMarkdownCodeSpanWithState,
 } = require('./state');
 const { trimWrappingJSONFence } = require('./jsonscan');
 const {
@@ -71,10 +70,17 @@ function processToolSieveChunk(state, chunk, toolNames) {
       break;
     }
     const start = findToolSegmentStart(state, pending);
+    if (start === HOLD_TOOL_SEGMENT_START) {
+      break;
+    }
     if (start >= 0) {
       const prefix = pending.slice(0, start);
       if (prefix) {
+        const resetMarkdownSpan = shouldResetUnclosedMarkdownPrefix(state, prefix, pending.slice(start));
         noteText(state, prefix);
+        if (resetMarkdownSpan) {
+          state.markdownCodeSpanTicks = 0;
+        }
         events.push({ type: 'text', text: prefix });
       }
       state.pending = '';
@@ -99,6 +105,10 @@ function flushToolSieve(state, toolNames) {
     return [];
   }
   const events = processToolSieveChunk(state, '', toolNames);
+  if (state.pending && Number.isInteger(state.markdownCodeSpanTicks) && state.markdownCodeSpanTicks > 0) {
+    state.markdownCodeSpanTicks = 0;
+    events.push(...processToolSieveChunk(state, '', toolNames));
+  }
   if (Array.isArray(state.pendingToolCalls) && state.pendingToolCalls.length > 0) {
     events.push({ type: 'tool_calls', calls: state.pendingToolCalls });
     state.pendingToolRaw = '';
@@ -162,8 +172,17 @@ function splitSafeContentForToolDetection(state, s) {
   // Only hold back partial XML tool tags.
   const xmlIdx = findPartialXMLToolTagStart(text);
   if (xmlIdx >= 0) {
-    if (insideCodeFenceWithState(state, text.slice(0, xmlIdx)) || insideMarkdownCodeSpanWithState(state, text.slice(0, xmlIdx))) {
+    if (insideCodeFenceWithState(state, text.slice(0, xmlIdx))) {
       return [text, ''];
+    }
+    const markdown = markdownCodeSpanStateAt(state, text.slice(0, xmlIdx));
+    if (markdown.ticks > 0) {
+      if (markdownCodeSpanCloses(text.slice(xmlIdx), markdown.ticks)) {
+        return [text, ''];
+      }
+      if (markdown.fromPrior) {
+        return ['', text];
+      }
     }
     if (xmlIdx > 0) {
       return [text.slice(0, xmlIdx), text.slice(xmlIdx)];
@@ -172,6 +191,8 @@ function splitSafeContentForToolDetection(state, s) {
   }
   return [text, ''];
 }
+
+const HOLD_TOOL_SEGMENT_START = -2;
 
 function findToolSegmentStart(state, s) {
   if (!s) {
@@ -183,11 +204,96 @@ function findToolSegmentStart(state, s) {
     if (!tag) {
       return -1;
     }
-    if (!insideCodeFenceWithState(state, s.slice(0, tag.start)) && !insideMarkdownCodeSpanWithState(state, s.slice(0, tag.start))) {
+    if (insideCodeFenceWithState(state, s.slice(0, tag.start))) {
+      offset = tag.end + 1;
+      continue;
+    }
+    const markdown = markdownCodeSpanStateAt(state, s.slice(0, tag.start));
+    if (markdown.ticks === 0) {
       return tag.start;
     }
-    offset = tag.end + 1;
+    if (markdownCodeSpanCloses(s.slice(tag.start), markdown.ticks)) {
+      offset = tag.end + 1;
+      continue;
+    }
+    if (markdown.fromPrior) {
+      return HOLD_TOOL_SEGMENT_START;
+    }
+    return tag.start;
   }
+}
+
+function markdownCodeSpanStateAt(state, text) {
+  const raw = typeof text === 'string' ? text : '';
+  let ticks = state && Number.isInteger(state.markdownCodeSpanTicks) ? state.markdownCodeSpanTicks : 0;
+  let fromPrior = ticks > 0;
+  for (let i = 0; i < raw.length;) {
+    if (raw[i] !== '`') {
+      i += 1;
+      continue;
+    }
+    const run = countBacktickRun(raw, i);
+    if (ticks === 0) {
+      if (run >= 3 && atMarkdownFenceLineStart(raw, i)) {
+        i += run;
+        continue;
+      }
+      if (state && insideCodeFenceWithState(state, raw.slice(0, i))) {
+        i += run;
+        continue;
+      }
+      ticks = run;
+      fromPrior = false;
+    } else if (run === ticks) {
+      ticks = 0;
+      fromPrior = false;
+    }
+    i += run;
+  }
+  return { ticks, fromPrior };
+}
+
+function markdownCodeSpanCloses(text, ticks) {
+  const raw = typeof text === 'string' ? text : '';
+  if (!Number.isInteger(ticks) || ticks <= 0) {
+    return false;
+  }
+  for (let i = 0; i < raw.length;) {
+    if (raw[i] !== '`') {
+      i += 1;
+      continue;
+    }
+    const run = countBacktickRun(raw, i);
+    if (run === ticks) {
+      return true;
+    }
+    i += run;
+  }
+  return false;
+}
+
+function shouldResetUnclosedMarkdownPrefix(state, prefix, suffix) {
+  const markdown = markdownCodeSpanStateAt(state, prefix);
+  return markdown.ticks > 0 && !markdown.fromPrior && !markdownCodeSpanCloses(suffix, markdown.ticks);
+}
+
+function countBacktickRun(text, start) {
+  let count = 0;
+  while (start + count < text.length && text[start + count] === '`') {
+    count += 1;
+  }
+  return count;
+}
+
+function atMarkdownFenceLineStart(text, idx) {
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    const ch = text[i];
+    if (ch === ' ' || ch === '\t') {
+      continue;
+    }
+    return ch === '\n' || ch === '\r';
+  }
+  return true;
 }
 
 function consumeToolCapture(state, toolNames) {

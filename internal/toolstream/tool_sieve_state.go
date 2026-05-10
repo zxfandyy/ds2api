@@ -80,13 +80,6 @@ func insideCodeFence(text string) bool {
 	return len(simulateCodeFenceState(nil, 0, 0, true, text).stack) > 0
 }
 
-func insideMarkdownCodeSpanWithState(state *State, text string) bool {
-	if state == nil {
-		return simulateMarkdownCodeSpanTicks(nil, 0, text) > 0
-	}
-	return simulateMarkdownCodeSpanTicks(state, state.markdownCodeSpanTicks, text) > 0
-}
-
 func updateMarkdownCodeSpanState(state *State, text string) {
 	if state == nil || !hasMeaningfulText(text) {
 		return

@@ -122,3 +122,58 @@ func TestProcessToolSieveInlineMarkdownToolCallSplitAcrossChunksDoesNotTrigger(t
 		t.Fatalf("expected inline example text preserved, got %q", textContent.String())
 	}
 }
+
+func TestProcessToolSieveUnclosedInlineMarkdownBeforeToolDoesTrigger(t *testing.T) {
+	var state State
+	input := "note with stray ` before real call " +
+		"<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">real.md</parameter></invoke></tool_calls>"
+
+	var events []Event
+	events = append(events, ProcessChunk(&state, input, []string{"read_file"})...)
+	events = append(events, Flush(&state, []string{"read_file"})...)
+
+	var textContent strings.Builder
+	var calls []string
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		for _, call := range evt.ToolCalls {
+			if path, _ := call.Input["path"].(string); path != "" {
+				calls = append(calls, path)
+			}
+		}
+	}
+
+	if len(calls) != 1 || calls[0] != "real.md" {
+		t.Fatalf("expected real tool call after stray backtick, got %#v from events %#v", calls, events)
+	}
+	if !strings.Contains(textContent.String(), "stray ` before real call") {
+		t.Fatalf("expected stray-backtick prefix preserved, got %q", textContent.String())
+	}
+}
+
+func TestProcessToolSieveUnclosedInlineMarkdownBeforeSplitToolDoesTriggerOnFlush(t *testing.T) {
+	var state State
+	chunks := []string{
+		"note with stray ` before real call ",
+		"<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">real.md</parameter></invoke></tool_calls>",
+	}
+
+	var events []Event
+	for _, c := range chunks {
+		events = append(events, ProcessChunk(&state, c, []string{"read_file"})...)
+	}
+	events = append(events, Flush(&state, []string{"read_file"})...)
+
+	var calls []string
+	for _, evt := range events {
+		for _, call := range evt.ToolCalls {
+			if path, _ := call.Input["path"].(string); path != "" {
+				calls = append(calls, path)
+			}
+		}
+	}
+
+	if len(calls) != 1 || calls[0] != "real.md" {
+		t.Fatalf("expected split real tool call after stray backtick, got %#v from events %#v", calls, events)
+	}
+}
